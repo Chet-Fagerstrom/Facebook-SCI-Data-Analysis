@@ -275,22 +275,6 @@ object Analysis {
 
 
 
-
-        // val invSciData = sciData.filter(x => !x.fips1.startsWith("02") && !x.fips2.startsWith("02") && !x.fips2.startsWith("15") && !x.fips1.startsWith("15")).map(x => InvSci(x.fips1, x.fips2, math.pow(x.sci, -1)))
-        // println(invSciData.filter(_.invSci >= 0.999).count())
-        // println(invSciData.count())
-        // val assembler = new VectorAssembler().setInputCols(Array("invSci")).setOutputCol("features")
-        // val transformed = assembler.transform(invSciData)
-        // transformed.show()
-        // val bkm = new BisectingKMeans().setK(48).setSeed(1L).setFeaturesCol("features")
-        // val model = bkm.fit(transformed)
-        // val clustered = model.transform(transformed)
-        // clustered.show()
-
-        // val clusteredWithCoords1 = clustered.join(fipsToCounties, fipsToCounties("fips") === clustered("fips1")).select('fips1, 'fips2, 'prediction, 'clat10 as "lat1", 'clon10 as "lat2")
-        // val clusteredWithCoords = clusteredWithCoords1.join(fipsToCounties, fipsToCounties("fips") === clusteredWithCoords1("fips2")).select('fips1, 'fips2, 'prediction, 'lat1, 'lon1, 'clat10 as "lat2", 'clon10 as "lon2")
-        // clusteredWithCoords.show()
-
         val avgs = sciData.groupBy('fips1).avg("sci")
         val avgsWithCoords = avgs.join(fipsToCounties, avgs("fips1") === fipsToCounties("fips")).select("fips1", "clon10", "clat10", "avg(sci)").filter('clon10 < -60 && 'clon10 > -130 && 'clat10 > 20 && 'clat10 < 50)
         
