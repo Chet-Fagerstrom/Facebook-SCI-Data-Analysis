@@ -26,6 +26,7 @@ import spire.std.seq
 import org.apache.spark.ml.stat.Correlation
 import org.apache.spark.sql.catalyst.expressions.aggregate.Corr
 import org.apache.spark.ml.classification.NaiveBayes
+import org.apache.spark.ml.clustering.BisectingKMeans
 import org.apache.spark.ml.regression.LinearRegression
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.StringIndexer
@@ -33,6 +34,7 @@ import org.apache.spark.ml.feature.VectorIndexer
 import org.apache.spark.ml.classification.DecisionTreeClassifier
 import org.apache.spark.ml.feature.IndexToString
 import org.apache.spark.ml.classification.DecisionTreeClassificationModel
+import org.apache.spark.graphx.GraphLoader
 
 case class MaskData(fp: String, never: Double, rarely: Double, sometimes: Double, freq: Double, always: Double)
 case class SRDState(srd: String, state: String)
@@ -44,6 +46,7 @@ case class BLSData(sid: String, year: Int, period: String, value: Double, footno
 case class SCI(fips1: String, fips2: String, sci: Int)
 case class StToState(fullState: String, st: String)
 case class AdjCounties(locName: String, locFips: String, neighborsFips: List[String])
+case class InvSci(fips1: String, fips2: String, invSci: Double)
 case class ElectionData(lineNum: Int, dVotes: Int, rVotes: Int, totalVotes: Int, perDem: Double, perRep: Double, diff: Int, perPtDiff: Double, state: String, county: String, fipsCode: String)
 case class SCIDoubleVal(fips1: String, fips2: String, sci: Int, val1: Double, val2: Double)
 case class SCIDiff(fips1: String, fips2: String, sci: Int, diff: Double)
@@ -159,7 +162,6 @@ object Analysis {
 
 
 
-
         // val favorites = sciData.groupBy('fips1).max("sci")
         // val favoritesWithCoords = favorites.join(fipsToCounties, favorites("fips1") === fipsToCounties("fips")).select("clon10", "clat10", "max(sci)").filter('clon10 < -60 && 'clon10 > -130 && 'clat10 > 20 && 'clat10 < 50).collect()
 
@@ -223,6 +225,7 @@ object Analysis {
 
 
 
+
         
         
         // val sciMask1 = sciData.join(maskData, maskData("fp") === sciData("fips1")).select('fips1, 'fips2, 'sci, 'never + 'rarely as "no1")
@@ -245,7 +248,7 @@ object Analysis {
         // val sciURDiff = sciUR.map(x => SCIDiff(x.getString(0), x.getString(1), x.getInt(2), math.abs(x.getDouble(3)-x.getDouble(4)))).cache()
         // // sciUR.show()
 
-        // val sciDists = locSciData.map(x => SCIDiff(x.fips1, x.fips2, x.sci, haversine(x.lat1, x.lon1, x.lat2, x.lon2))).filter(x => x.fips1.substring(0,2) == x.fips2.substring(0,2))
+        // val sciDists = locSciData.map(x => SCIDiff(x.fips1, x.fips2, x.sci, haversine(x.lat1, x.lon1, x.lat2, x.lon2)))//.filter(x => x.fips1.substring(0,2) == x.fips2.substring(0,2))
 
         // val finalRegData1 = sciDists.join(sciURDiff, sciDists("fips1") === sciURDiff("fips1") && sciDists("fips2") === sciURDiff("fips2")).select(sciDists("fips1"), sciDists("fips2"), sciDists("sci"), sciDists("diff") as "dist", sciURDiff("diff") as "ur")
         // val finalRegData2 = finalRegData1.join(sciElecDiff, sciElecDiff("fips1") === finalRegData1("fips1") && sciElecDiff("fips2") === finalRegData1("fips2")).select(finalRegData1("fips1"), finalRegData1("fips2"), finalRegData1("sci"), 'dist, 'ur, 'diff as "elec")
@@ -269,7 +272,86 @@ object Analysis {
         // val plot = Plot.scatterPlots(Seq((inputs, scis, BlackARGB, 1), (inputs, preds, RedARGB, 2)),"Regression 2.5", "adjusted f(masks)", "log(SCI) and Prediction")
         // SwingRenderer(plot, 1000, 1000, true)
 
+
+
+
+
+        // val invSciData = sciData.filter(x => !x.fips1.startsWith("02") && !x.fips2.startsWith("02") && !x.fips2.startsWith("15") && !x.fips1.startsWith("15")).map(x => InvSci(x.fips1, x.fips2, math.pow(x.sci, -1)))
+        // println(invSciData.filter(_.invSci >= 0.999).count())
+        // println(invSciData.count())
+        // val assembler = new VectorAssembler().setInputCols(Array("invSci")).setOutputCol("features")
+        // val transformed = assembler.transform(invSciData)
+        // transformed.show()
+        // val bkm = new BisectingKMeans().setK(48).setSeed(1L).setFeaturesCol("features")
+        // val model = bkm.fit(transformed)
+        // val clustered = model.transform(transformed)
+        // clustered.show()
+
+        // val clusteredWithCoords1 = clustered.join(fipsToCounties, fipsToCounties("fips") === clustered("fips1")).select('fips1, 'fips2, 'prediction, 'clat10 as "lat1", 'clon10 as "lat2")
+        // val clusteredWithCoords = clusteredWithCoords1.join(fipsToCounties, fipsToCounties("fips") === clusteredWithCoords1("fips2")).select('fips1, 'fips2, 'prediction, 'lat1, 'lon1, 'clat10 as "lat2", 'clon10 as "lon2")
+        // clusteredWithCoords.show()
+
+        val avgs = sciData.groupBy('fips1).avg("sci")
+        val avgsWithCoords = avgs.join(fipsToCounties, avgs("fips1") === fipsToCounties("fips")).select("fips1", "clon10", "clat10", "avg(sci)").filter('clon10 < -60 && 'clon10 > -130 && 'clat10 > 20 && 'clat10 < 50)
         
+        val lf2010 = fullBLSData.filter('year === 2010 && 'period === "M13" && 'sid.endsWith("06")).as[BLSData]
+        val countyLFs = lf2010.join(sKey.filter('areaType === "F"), lf2010("sid") === sKey("sid")).select("value", "title", "srdCode")
+        val countyStateLF = countyLFs.join(srdToStates, srdToStates("srd") === countyLFs("srdCode")).select("value", "title", "state")
+        val countyToFips = elections.join(stToState, stToState("st") === elections("state")).select("county", "fullState", "fipsCode")
+        val lfFips = countyToFips.join(countyStateLF, countyStateLF("title").contains(countyToFips("county")) && countyStateLF("state") === countyToFips("fullState")).select("value", "fipsCode")
+        val avgCoordPop = avgsWithCoords.join(lfFips, lfFips("fipsCode") === avgsWithCoords("fips1")).select("fips1", "clon10", "clat10", "avg(sci)", "value")
+        
+        val avgCoordPopCov = maskData.join(avgCoordPop, avgCoordPop("fips1") === maskData("fp")).select("fips1", "clon10", "clat10", "avg(sci)", "value", "never", "rarely", "sometimes", "freq", "always").withColumnRenamed("avg(sci)", "avg").withColumnRenamed("clat10", "lat").withColumnRenamed("clon10", "lon").withColumnRenamed("value","pop").withColumn("lat", col("lat").cast(DoubleType)).withColumn("lon", col("lon").cast(DoubleType))
+        val avgCoordPopCovElec = elections.join(avgCoordPopCov, avgCoordPopCov("fips1") === elections("fipsCode")).select("fips1", "lon", "lat", "avg", "pop", "perDem", "never", "rarely", "sometimes", "freq", "always")
+        
+        // val maskClassification = avgCoordPopCovElec.withColumn("maskClass", expr("CASE WHEN never + rarely + sometimes > 0.5 THEN 0.0 ELSE 1.0 END")).drop("never", "rarely", "sometimes", "freq", "always")
+        // println(maskClassification.filter('maskClass === 0.0).count())
+        // val sciClassification = avgCoordPopCovElec.withColumn("sciClass", expr("CASE WHEN avg < 15000 THEN 0.0 ELSE 1.0 END")).drop("avg")
+        // sciClassification.show()
+
+        // val va = new VectorAssembler().setInputCols(Array("avg", "pop", "perDem")).setOutputCol("features")
+        // val transformed = va.transform(maskClassification)
+        // transformed.show()
+        
+        // val Array(training, test) = transformed.randomSplit(Array(0.7, 0.3), seed = 1234L)
+        // val model = new NaiveBayes().setLabelCol("maskClass").setFeaturesCol("features").setPredictionCol("prediction").fit(training)
+
+        // val preds = model.transform(test)
+        // preds.show()
+
+        // val evaluator = new MulticlassClassificationEvaluator().setLabelCol("maskClass").setPredictionCol("prediction").setMetricName("accuracy")
+        // val accuracy = evaluator.evaluate(preds)
+        // println("Mask Classification Accuracy: " + accuracy)
+
+
+
+
+
+        // val va = new VectorAssembler().setInputCols(Array("pop","never", "rarely", "sometimes", "freq", "always", "perDem")).setOutputCol("features")
+        // val transformed = va.transform(sciClassification)
+        // transformed.show()
+        
+        // val Array(training, test) = transformed.randomSplit(Array(0.7, 0.3), seed = 1234L)
+        // val model = new NaiveBayes().setLabelCol("sciClass").setFeaturesCol("features").setPredictionCol("prediction").fit(training)
+
+        // val preds = model.transform(test)
+        // preds.show()
+
+        // val evaluator = new MulticlassClassificationEvaluator().setLabelCol("sciClass").setPredictionCol("prediction").setMetricName("accuracy")
+        // val accuracy = evaluator.evaluate(preds)
+        // println("SCI Classification Accuracy: " + accuracy)
+
+
+
+
+        
+        val gradAvg = ColorGradient(0.0 -> BlackARGB, 1000.0 -> BlueARGB, 10000.0 -> GreenARGB, 100000.0 -> RedARGB)
+        val scisFav = avgsWithCoords.map(_.getDouble(3)).collect()
+        val longsFav = avgsWithCoords.map(_.getString(1).toDouble).collect()
+        val latsFav = avgsWithCoords.map(_.getString(2).toDouble).collect()
+        val plotFav = Plot.scatterPlot(longsFav, latsFav, "Average SCI", "Longitude", "Latitude", 4, scisFav.map(gradAvg))
+        SwingRenderer(plotFav, 1000, 780, true)
+
 
 
         spark.close()
